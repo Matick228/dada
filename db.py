@@ -1,4 +1,3 @@
-# db.py
 import os
 from decimal import Decimal
 import psycopg2
@@ -45,22 +44,13 @@ def get_db_connection_by_role(role):
 
 
 def hash_password(password):
-    """Хэширование пароля"""
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 def init_db():
-    """
-    Полная инициализация БД с нуля - максимально автоматизированная система
-    Вся бизнес-логика реализована через SQL функции и триггеры
-    Компактная схема без дублирования данных
-    """
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # ========== СОЗДАНИЕ ТАБЛИЦ ==========
-
-    # 1. Таблица пользователей
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id SERIAL PRIMARY KEY,
@@ -72,7 +62,6 @@ def init_db():
         );
     """)
 
-    # 2. Таблица баланса и статистики
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_balance (
             user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
@@ -82,7 +71,6 @@ def init_db():
         );
     """)
 
-    # 3. Таблица истории платежей
     cur.execute("""
         CREATE TABLE IF NOT EXISTS payment_history (
             payment_id SERIAL PRIMARY KEY,
@@ -93,7 +81,6 @@ def init_db():
         );
     """)
 
-    # 4. Таблица чатов
     cur.execute("""
         CREATE TABLE IF NOT EXISTS chats (
             chat_id SERIAL PRIMARY KEY,
@@ -103,7 +90,6 @@ def init_db():
         );
     """)
 
-    # 5. Таблица использования токенов
     cur.execute("""
         CREATE TABLE IF NOT EXISTS token_usage (
             usage_id SERIAL PRIMARY KEY,
@@ -118,7 +104,6 @@ def init_db():
         );
     """)
 
-    # 6. Таблица сообщений
     cur.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             message_id SERIAL PRIMARY KEY,
@@ -130,7 +115,6 @@ def init_db():
         );
     """)
 
-    # 7. Таблица поддержки
     cur.execute("""
         CREATE TABLE IF NOT EXISTS support_tickets (
             ticket_id SERIAL PRIMARY KEY,
@@ -144,21 +128,17 @@ def init_db():
         );
     """)
 
-    # ========== ФУНКЦИИ БИЗНЕС-ЛОГИКИ ==========
-
-    # Функция валидации email
     cur.execute("""
         CREATE OR REPLACE FUNCTION validate_email(email TEXT) RETURNS BOOLEAN AS $$
         BEGIN
             IF email IS NULL OR email = '' THEN
-                RETURN TRUE; -- NULL email разрешен
+                RETURN TRUE; 
             END IF;
             RETURN email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$';
         END;
         $$ LANGUAGE plpgsql IMMUTABLE;
     """)
 
-    # Функция расчета скидки на основе total_tokens
     cur.execute("""
         CREATE OR REPLACE FUNCTION calculate_discount(total_tokens BIGINT) RETURNS DECIMAL(5,2) AS $$
         BEGIN
@@ -173,7 +153,6 @@ def init_db():
         $$ LANGUAGE plpgsql IMMUTABLE;
     """)
 
-    # Функция расчета стоимости использования токенов
     cur.execute("""
         CREATE OR REPLACE FUNCTION calculate_token_cost(
             prompt_tokens INTEGER,
@@ -189,16 +168,15 @@ def init_db():
         $$ LANGUAGE plpgsql IMMUTABLE;
     """)
 
-    # Функция автосоздания баланса при регистрации
     cur.execute("""
         CREATE OR REPLACE FUNCTION auto_create_balance() RETURNS TRIGGER
         LANGUAGE plpgsql SECURITY DEFINER AS $$
         BEGIN
-            -- Создаем баланс с начальным бонусом 300 руб
+
             INSERT INTO user_balance(user_id, balance, total_tokens, current_discount)
             VALUES (NEW.user_id, 300.00, 0, 0.00);
 
-            -- Записываем в историю платежей
+
             INSERT INTO payment_history(user_id, amount, status)
             VALUES (NEW.user_id, 300.00, 'success');
 
@@ -207,7 +185,6 @@ def init_db():
         $$;
     """)
 
-    # Функция валидации email при регистрации
     cur.execute("""
         CREATE OR REPLACE FUNCTION validate_user_email() RETURNS TRIGGER
         LANGUAGE plpgsql AS $$
@@ -220,7 +197,6 @@ def init_db():
         $$;
     """)
 
-    # Функция автоматического пересчета скидки
     cur.execute("""
         CREATE OR REPLACE FUNCTION auto_recalculate_discount() RETURNS TRIGGER
         LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -236,7 +212,6 @@ def init_db():
         $$;
     """)
 
-    # Функция проверки достаточности баланса перед списанием
     cur.execute("""
         CREATE OR REPLACE FUNCTION check_balance_before_usage() RETURNS TRIGGER
         LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -245,7 +220,7 @@ def init_db():
             disc DECIMAL(5,2);
             calculated_cost DECIMAL(10,4);
         BEGIN
-            -- Получаем текущий баланс и скидку
+
             SELECT balance, current_discount INTO bal, disc
             FROM user_balance WHERE user_id = NEW.user_id;
 
@@ -253,15 +228,15 @@ def init_db():
                 RAISE EXCEPTION 'Баланс не найден для пользователя %', NEW.user_id;
             END IF;
 
-            -- Рассчитываем стоимость
+
             calculated_cost := calculate_token_cost(NEW.prompt_tokens, NEW.response_tokens, disc);
 
-            -- Проверяем достаточность средств
+
             IF bal < calculated_cost THEN
                 RAISE EXCEPTION 'Недостаточно средств: баланс=%, стоимость=%', bal, calculated_cost;
             END IF;
 
-            -- Автоматически устанавливаем расчетные значения
+
             NEW.base_cost := (NEW.prompt_tokens::DECIMAL / 1000.0 * 0.02) + (NEW.response_tokens::DECIMAL / 1000.0 * 0.09);
             NEW.discount_applied := disc;
             NEW.final_cost := calculated_cost;
@@ -271,7 +246,6 @@ def init_db():
         $$;
     """)
 
-    # Функция автосписания при использовании токенов
     cur.execute("""
         CREATE OR REPLACE FUNCTION auto_deduct_on_usage() RETURNS TRIGGER
         LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -280,44 +254,44 @@ def init_db():
             new_discount DECIMAL(5,2);
             new_balance DECIMAL(10,2);
         BEGIN
-            -- Обновляем баланс и токены
+
             UPDATE user_balance
             SET balance = balance - NEW.final_cost,
                 total_tokens = total_tokens + NEW.prompt_tokens + NEW.response_tokens
             WHERE user_id = NEW.user_id
             RETURNING total_tokens, current_discount, balance INTO new_total_tokens, new_discount, new_balance;
 
-            -- Пересчет скидки выполнится автоматически через триггер auto_recalculate_discount
+
+
 
             RETURN NEW;
         END;
         $$;
     """)
 
-    # Функция бонусов за milestones
     cur.execute("""
         CREATE OR REPLACE FUNCTION award_milestone_bonus() RETURNS TRIGGER
         LANGUAGE plpgsql SECURITY DEFINER AS $$
         DECLARE
             bonus DECIMAL(10,2) := 0;
         BEGIN
-            -- Бонус за 10к токенов
+
             IF NEW.total_tokens >= 10000 AND (OLD.total_tokens IS NULL OR OLD.total_tokens < 10000) THEN
                 bonus := 50.00;
-            -- Бонус за 50к токенов
+
             ELSIF NEW.total_tokens >= 50000 AND (OLD.total_tokens IS NULL OR OLD.total_tokens < 50000) THEN
                 bonus := 150.00;
             END IF;
 
             IF bonus > 0 THEN
-                -- Начисляем бонус
+
                 UPDATE user_balance SET balance = balance + bonus WHERE user_id = NEW.user_id;
 
-                -- Записываем в историю платежей
+
                 INSERT INTO payment_history(user_id, amount, status)
                 VALUES (NEW.user_id, bonus, 'success');
 
-                -- Отправляем уведомление в поддержку
+
                 INSERT INTO support_tickets(user_id, author, content, is_read_user)
                 VALUES (NEW.user_id, 'admin', ' Бонус ' || bonus || ' руб за активность!', FALSE);
             END IF;
@@ -327,7 +301,6 @@ def init_db():
         $$;
     """)
 
-    # Функция уведомления о низком балансе
     cur.execute("""
         CREATE OR REPLACE FUNCTION notify_low_balance() RETURNS TRIGGER
         LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -341,7 +314,6 @@ def init_db():
         $$;
     """)
 
-    # Функция автоматизации поддержки
     cur.execute("""
         CREATE OR REPLACE FUNCTION auto_support_handling() RETURNS TRIGGER
         LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -349,7 +321,7 @@ def init_db():
             user_tokens BIGINT := 0;
             priority_level INTEGER := 1;
         BEGIN
-            -- Приоритизация по активности пользователя
+
             SELECT COALESCE(total_tokens, 0) INTO user_tokens
             FROM user_balance WHERE user_id = NEW.user_id;
 
@@ -361,12 +333,12 @@ def init_db():
                 priority_level := 1;
             END IF;
 
-            -- Обновляем приоритет
+
             UPDATE support_tickets
             SET priority = priority_level
             WHERE ticket_id = NEW.ticket_id;
 
-            -- Автоответы на частые вопросы
+
             IF NEW.author = 'user' THEN
                 IF NEW.content ILIKE '%цена%' OR NEW.content ILIKE '%стоимост%' OR NEW.content ILIKE '%стоит%' THEN
                     INSERT INTO support_tickets(user_id, author, content, is_read_user)
@@ -385,15 +357,14 @@ def init_db():
         $$;
     """)
 
-    # Функция обновления активности чата
     cur.execute("""
         CREATE OR REPLACE FUNCTION update_chat_activity() RETURNS TRIGGER
         LANGUAGE plpgsql SECURITY DEFINER AS $$
         BEGIN
-            -- Обновляем last_activity
+
             UPDATE chats SET last_activity = CURRENT_TIMESTAMP WHERE chat_id = NEW.chat_id;
 
-            -- Генерируем title из первого сообщения пользователя, если title еще не установлен
+
             IF NEW.sender = 'user' THEN
                 UPDATE chats
                 SET title = LEFT(NEW.content, 50)
@@ -406,175 +377,72 @@ def init_db():
         $$;
     """)
 
-    # ========== ТРИГГЕРЫ ==========
-
-    # 1. Автосоздание баланса при регистрации
     cur.execute("""
-        DROP TRIGGER IF EXISTS trg_auto_create_balance ON users;
-        CREATE TRIGGER trg_auto_create_balance
+        CREATE OR REPLACE TRIGGER trg_auto_create_balance
         AFTER INSERT ON users
         FOR EACH ROW EXECUTE FUNCTION auto_create_balance();
     """)
 
-    # 2. Валидация email
     cur.execute("""
-        DROP TRIGGER IF EXISTS trg_validate_user_email ON users;
-        CREATE TRIGGER trg_validate_user_email
+        CREATE OR REPLACE TRIGGER trg_validate_user_email
         BEFORE INSERT OR UPDATE ON users
         FOR EACH ROW EXECUTE FUNCTION validate_user_email();
     """)
 
-    # 3. Автоматический пересчет скидки
     cur.execute("""
-        DROP TRIGGER IF EXISTS trg_auto_recalculate_discount ON user_balance;
-        CREATE TRIGGER trg_auto_recalculate_discount
+        CREATE OR REPLACE TRIGGER trg_auto_recalculate_discount
         BEFORE UPDATE OF total_tokens ON user_balance
         FOR EACH ROW EXECUTE FUNCTION auto_recalculate_discount();
     """)
 
-    # 4. Проверка баланса перед использованием
     cur.execute("""
-        DROP TRIGGER IF EXISTS trg_check_balance_before_usage ON token_usage;
-        CREATE TRIGGER trg_check_balance_before_usage
+        CREATE OR REPLACE TRIGGER trg_check_balance_before_usage
         BEFORE INSERT ON token_usage
         FOR EACH ROW EXECUTE FUNCTION check_balance_before_usage();
     """)
 
-    # 5. Автосписание при использовании
     cur.execute("""
-        DROP TRIGGER IF EXISTS trg_auto_deduct_on_usage ON token_usage;
-        CREATE TRIGGER trg_auto_deduct_on_usage
+        CREATE OR REPLACE TRIGGER trg_auto_deduct_on_usage
         AFTER INSERT ON token_usage
         FOR EACH ROW EXECUTE FUNCTION auto_deduct_on_usage();
     """)
 
-    # 6. Бонусы за milestones
     cur.execute("""
-        DROP TRIGGER IF EXISTS trg_award_milestone_bonus ON user_balance;
-        CREATE TRIGGER trg_award_milestone_bonus
+        CREATE OR REPLACE TRIGGER trg_award_milestone_bonus
         AFTER UPDATE OF total_tokens ON user_balance
         FOR EACH ROW EXECUTE FUNCTION award_milestone_bonus();
     """)
 
-    # 7. Уведомление о низком балансе
     cur.execute("""
-        DROP TRIGGER IF EXISTS trg_notify_low_balance ON user_balance;
-        CREATE TRIGGER trg_notify_low_balance
+        CREATE OR REPLACE TRIGGER trg_notify_low_balance
         AFTER UPDATE OF balance ON user_balance
         FOR EACH ROW EXECUTE FUNCTION notify_low_balance();
     """)
 
-    # 8. Обновление активности чата
     cur.execute("""
-        DROP TRIGGER IF EXISTS trg_update_chat_activity ON messages;
-        CREATE TRIGGER trg_update_chat_activity
+        CREATE OR REPLACE TRIGGER trg_update_chat_activity
         AFTER INSERT ON messages
         FOR EACH ROW EXECUTE FUNCTION update_chat_activity();
     """)
 
-    # 9. Автоматизация поддержки
     cur.execute("""
-        DROP TRIGGER IF EXISTS trg_auto_support_handling ON support_tickets;
-        CREATE TRIGGER trg_auto_support_handling
+        CREATE OR REPLACE TRIGGER trg_auto_support_handling
         AFTER INSERT ON support_tickets
         FOR EACH ROW EXECUTE FUNCTION auto_support_handling();
     """)
 
-    # ========== АНАЛИТИЧЕСКИЕ ФУНКЦИИ ==========
-
-    # Отчет по использованию токенов пользователя
-    cur.execute("""
-        CREATE OR REPLACE FUNCTION report_token_usage(
-            u_id INTEGER,
-            days_back INTEGER DEFAULT 30
-        ) RETURNS TABLE(
-            day DATE,
-            total_tokens BIGINT,
-            total_cost DECIMAL
-        ) AS $$
-        BEGIN
-            RETURN QUERY
-            SELECT
-                DATE(timestamp) AS day,
-                COALESCE(SUM(prompt_tokens + response_tokens), 0)::BIGINT AS total_tokens,
-                COALESCE(SUM(final_cost), 0) AS total_cost
-            FROM token_usage
-            WHERE user_id = u_id
-              AND timestamp >= NOW() - (days_back || ' days')::INTERVAL
-            GROUP BY DATE(timestamp)
-            ORDER BY day DESC;
-        END;
-        $$ LANGUAGE plpgsql;
-    """)
-
-    # Эффективность скидок
-    cur.execute("""
-        CREATE OR REPLACE FUNCTION discount_effectiveness(
-            days_back INTEGER DEFAULT 30
-        ) RETURNS TABLE(
-            discount DECIMAL(5,2),
-            usages_count BIGINT,
-            total_savings DECIMAL,
-            avg_saving_per_usage DECIMAL
-        ) AS $$
-        BEGIN
-            RETURN QUERY
-            SELECT
-                tu.discount_applied AS discount,
-                COUNT(*)::BIGINT AS usages_count,
-                COALESCE(SUM(tu.base_cost - tu.final_cost), 0) AS total_savings,
-                COALESCE(AVG(tu.base_cost - tu.final_cost), 0) AS avg_saving_per_usage
-            FROM token_usage tu
-            WHERE tu.timestamp >= NOW() - (days_back || ' days')::INTERVAL
-            GROUP BY tu.discount_applied
-            ORDER BY tu.discount_applied DESC;
-        END;
-        $$ LANGUAGE plpgsql;
-    """)
-
-    # Активность поддержки по часам
-    cur.execute("""
-        CREATE OR REPLACE FUNCTION hourly_support_activity(
-            days_back INTEGER DEFAULT 7
-        ) RETURNS TABLE(
-            hour_of_day INTEGER,
-            messages_count BIGINT,
-            user_messages BIGINT,
-            admin_messages BIGINT
-        ) AS $$
-        BEGIN
-            RETURN QUERY
-            SELECT
-                EXTRACT(HOUR FROM created_at)::INTEGER AS hour_of_day,
-                COUNT(*)::BIGINT AS messages_count,
-                COUNT(*) FILTER (WHERE author = 'user')::BIGINT AS user_messages,
-                COUNT(*) FILTER (WHERE author = 'admin')::BIGINT AS admin_messages
-            FROM support_tickets
-            WHERE created_at >= NOW() - (days_back || ' days')::INTERVAL
-            GROUP BY EXTRACT(HOUR FROM created_at)
-            ORDER BY hour_of_day;
-        END;
-        $$ LANGUAGE plpgsql;
-    """)
-
-    # ========== ИНДЕКСЫ УБРАНЫ (кроме PRIMARY KEY и FOREIGN KEY) ==========
-
-    # ========== НАСТРОЙКА ПРАВ ДОСТУПА ==========
-
-    # Создание ролей
     for role_name, role_password in [
         (BOT_ADMIN_USER, BOT_ADMIN_PASSWORD),
         (BOT_USER_USER, BOT_USER_PASSWORD),
         (BOT_BANNED_USER, BOT_BANNED_PASSWORD)
     ]:
-        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,))
+        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,))  #Так не надо было (((( но лучше единый стиль
         if not cur.fetchone():
             cur.execute(
                 sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(role_name)),
                 (role_password,)
             )
 
-    # Права на подключение
     cur.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}, {}, {}").format(
         sql.Identifier(DB_NAME),
         sql.Identifier(BOT_ADMIN_USER),
@@ -582,37 +450,29 @@ def init_db():
         sql.Identifier(BOT_BANNED_USER)
     ))
 
-    # Права на схему
     cur.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}, {}, {}").format(
         sql.Identifier(BOT_ADMIN_USER),
         sql.Identifier(BOT_USER_USER),
         sql.Identifier(BOT_BANNED_USER)
     ))
 
-    # Права для админа (полный доступ)
     cur.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {}").format(
         sql.Identifier(BOT_ADMIN_USER)
     ))
 
-    # Права для обычного пользователя
     cur.execute(sql.SQL(
         "GRANT SELECT, INSERT, UPDATE ON users, user_balance, token_usage, "
         "chats, messages, payment_history, support_tickets TO {}"
     ).format(sql.Identifier(BOT_USER_USER)))
 
-    # Права для заблокированного пользователя (только чтение своих чатов и сообщений)
     cur.execute(
         sql.SQL("GRANT SELECT ON users, user_balance, chats, messages TO {}").format(sql.Identifier(BOT_BANNED_USER)))
 
-    # Права на последовательности
     cur.execute(sql.SQL("GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO {}, {}").format(
         sql.Identifier(BOT_ADMIN_USER),
         sql.Identifier(BOT_USER_USER)
     ))
 
-    # ========== ТЕСТОВЫЕ ДАННЫЕ ==========
-
-    # Создание тестового админа (если не существует)
     cur.execute("SELECT user_id FROM users WHERE username = 'admin'")
     if not cur.fetchone():
         admin_password_hash = hash_password('admin123')
@@ -628,10 +488,7 @@ def init_db():
     conn.close()
 
 
-# ========== ФУНКЦИИ ДЛЯ РАБОТЫ С ПРИЛОЖЕНИЕМ ==========
-
 def register_user(username, password, email=None, conn=None):
-    """Регистрация нового пользователя"""
     if conn is None:
         conn = get_db_connection()
         should_close = True
@@ -661,7 +518,6 @@ def register_user(username, password, email=None, conn=None):
 
 
 def authenticate_user(username, password, conn=None):
-    """Аутентификация пользователя"""
     if conn is None:
         conn = get_db_connection()
         should_close = True
@@ -681,7 +537,7 @@ def authenticate_user(username, password, conn=None):
         conn.close()
 
     if result:
-        return True, result  # user_id, username, role
+        return True, result
     else:
         return False, "Неверный логин или пароль"
 
@@ -717,6 +573,23 @@ def set_user_role(target_username, new_role, admin_id, conn=None):
         return False, "У вас нет прав на изменение ролей."
 
     cur = conn.cursor()
+
+    cur.execute("SELECT user_id, role FROM users WHERE username = %s;", (target_username,))
+    target_info = cur.fetchone()
+    if not target_info:
+        cur.close()
+        if should_close:
+            conn.close()
+        return False, f"Пользователь {target_username} не найден."
+
+    target_user_id, target_role = target_info
+
+    if target_role == 'admin' and target_user_id != admin_id:
+        cur.close()
+        if should_close:
+            conn.close()
+        return False, "Вы не можете изменить роль другого администратора."
+
     cur.execute("UPDATE users SET role = %s WHERE username = %s RETURNING user_id;", (new_role, target_username))
     result = cur.fetchone()
     conn.commit()
@@ -739,7 +612,7 @@ def log_token_usage(user_id, prompt_tokens, response_tokens, chat_id=None, conn=
         should_close = False
 
     cur = conn.cursor()
-    # Получаем текущий баланс и скидку
+
     cur.execute("SELECT balance, current_discount FROM user_balance WHERE user_id = %s;", (user_id,))
     balance_info = cur.fetchone()
     if not balance_info:
@@ -750,13 +623,11 @@ def log_token_usage(user_id, prompt_tokens, response_tokens, chat_id=None, conn=
 
     current_balance, current_discount = balance_info
 
-    # Расчет стоимости (триггер автоматически установит значения)
     base_cost = (Decimal(prompt_tokens) / Decimal(1000) * Decimal('0.02')) + (
-                Decimal(response_tokens) / Decimal(1000) * Decimal('0.09'))
+            Decimal(response_tokens) / Decimal(1000) * Decimal('0.09'))
     cd = Decimal(current_discount)
     final_cost = base_cost * (Decimal(1) - cd / Decimal(100))
 
-    # Вставка записи (триггеры автоматически обработают баланс и токены)
     if chat_id:
         cur.execute(
             "INSERT INTO token_usage (user_id, chat_id, prompt_tokens, response_tokens, base_cost, discount_applied, final_cost) "
@@ -795,13 +666,12 @@ def get_balance_and_info(user_id, conn=None):
         conn.close()
 
     if result:
-        return result  # balance, current_discount, total_tokens
+        return result
     else:
         return (0.00, 0.00, 0)
 
 
 def create_new_chat(user_id, conn=None):
-    """Создание нового чата"""
     if conn is None:
         conn = get_db_connection()
         should_close = True
@@ -821,7 +691,6 @@ def create_new_chat(user_id, conn=None):
 
 
 def get_user_chats(user_id, conn=None):
-    """Получить список чатов пользователя с preview и временем"""
     if conn is None:
         conn = get_db_connection()
         should_close = True
@@ -874,17 +743,17 @@ def add_message(chat_id, user_id, sender, content, conn=None):
 def get_message_history(chat_id, conn=None):
     if conn is None:
         conn = get_db_connection()
-        should_close = True
-    else:
-        should_close = False
+    #     should_close = True
+    # else:
+    #     should_close = False
 
     cur = conn.cursor()
     cur.execute("SELECT sender, content FROM messages WHERE chat_id = %s ORDER BY timestamp;", (chat_id,))
     result = cur.fetchall()
     cur.close()
 
-    if should_close:
-        conn.close()
+    # if should_close:
+    conn.close()
 
     return result
 
@@ -897,12 +766,12 @@ def simulate_payment(user_id, amount, conn=None):
         should_close = False
 
     cur = conn.cursor()
-    # Вставка в payment_history
+
     cur.execute(
         "INSERT INTO payment_history (user_id, amount, status) VALUES (%s, %s, %s);",
         (user_id, amount, 'success')
     )
-    # Обновление баланса
+
     cur.execute(
         "UPDATE user_balance SET balance = balance + %s WHERE user_id = %s;",
         (amount, user_id)
@@ -914,7 +783,6 @@ def simulate_payment(user_id, amount, conn=None):
         conn.close()
 
 
-# ====== ПОДДЕРЖКА ======
 def support_send_user_message(user_id, content, conn=None):
     if conn is None:
         conn = get_db_connection()
@@ -1011,7 +879,6 @@ def support_mark_user_read(user_id, conn=None):
 
 
 def support_get_inbox(conn=None):
-    """Список переписок для админа: user_id, username, последний текст, количество непрочитанных для админа"""
     if conn is None:
         conn = get_db_connection()
         should_close = True
@@ -1038,14 +905,9 @@ def support_get_inbox(conn=None):
 
 
 def fix_banned_user_permissions():
-    """
-    Исправляет права доступа для забаненных пользователей.
-    Добавляет доступ к таблице user_balance.
-    """
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Добавляем доступ к user_balance для забаненных пользователей
     cur.execute(sql.SQL("GRANT SELECT ON user_balance TO {}").format(sql.Identifier(BOT_BANNED_USER)))
     conn.commit()
     cur.close()
@@ -1053,5 +915,4 @@ def fix_banned_user_permissions():
 
 
 if __name__ == "__main__":
-    # Можно запустить для исправления прав доступа
     fix_banned_user_permissions()
