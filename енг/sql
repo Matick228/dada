@@ -83,7 +83,7 @@ BEGIN
     END IF;
     RETURN email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$';
 END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+$$ LANGUAGE plpgsql; --Один результат для одинаковых входных данных
 
 
 
@@ -118,7 +118,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 
 
 CREATE OR REPLACE FUNCTION auto_create_balance() RETURNS TRIGGER
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER AS $$ -- Права текущего пользователя
 BEGIN
     INSERT INTO user_balance(user_id, balance, total_tokens, current_discount)
     VALUES (NEW.user_id, 300.00, 0, 0.00);
@@ -132,16 +132,6 @@ $$;
 
 
 
-
-CREATE OR REPLACE FUNCTION validate_user_email() RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
-BEGIN
-    IF NOT validate_email(NEW.email) THEN
-        RAISE EXCEPTION 'Некорректный email адрес: %', NEW.email;
-    END IF;
-    RETURN NEW;
-END;
-$$;
 
 CREATE OR REPLACE FUNCTION auto_recalculate_discount() RETURNS TRIGGER
 LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -310,10 +300,6 @@ CREATE OR REPLACE TRIGGER trg_auto_create_balance
 AFTER INSERT ON users
 FOR EACH ROW EXECUTE FUNCTION auto_create_balance();
 
-CREATE OR REPLACE TRIGGER trg_validate_user_email
-BEFORE INSERT OR UPDATE ON users
-FOR EACH ROW EXECUTE FUNCTION validate_user_email();
-
 CREATE OR REPLACE TRIGGER trg_auto_recalculate_discount
 BEFORE UPDATE OF total_tokens ON user_balance
 FOR EACH ROW EXECUTE FUNCTION auto_recalculate_discount();
@@ -340,4 +326,4 @@ FOR EACH ROW EXECUTE FUNCTION update_chat_activity();
 
 CREATE OR REPLACE TRIGGER trg_auto_support_handling
 AFTER INSERT ON support_tickets
-FOR EACH ROW EXECUTE FUNCTION auto_support_handling();отттт
+FOR EACH ROW EXECUTE FUNCTION auto_support_handling();
